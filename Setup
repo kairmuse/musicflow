@@ -1,0 +1,46 @@
+from setuptools import setup, find_packages
+
+with open("README.md", "r", encoding="utf-8") as fh:
+    long_description = fh.read()
+
+setup(
+    name="musicflow",
+    version="1.0.0",
+    author="MusicFlow Development Team",
+    description="A modern Material Design 3 music player with streaming support",
+    long_description=long_description,
+    long_description_content_type="text/markdown",
+    url="https://github.com/yourusername/musicflow",
+    packages=find_packages(),
+    classifiers=[
+        "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3.8",
+        "Programming Language :: Python :: 3.9",
+        "Programming Language :: Python :: 3.10",
+        "Programming Language :: Python :: 3.11",
+        "License :: OSI Approved :: MIT License",
+        "Operating System :: OS Independent",
+        "Development Status :: 4 - Beta",
+        "Intended Audience :: End Users/Desktop",
+        "Topic :: Multimedia :: Sound/Audio",
+        "Topic :: Multimedia :: Sound/Audio :: Players",
+    ],
+    python_requires=">=3.8",
+    install_requires=[
+        "PyQt6>=6.6.1",
+        "PyQt6-QtMultimedia>=6.6.1",
+        "pygame>=2.5.2",
+        "requests>=2.31.0",
+        "spotipy>=2.22.1",
+        "yt-dlp>=2023.11.16",
+        "mutagen>=1.46.0",
+        "python-dotenv>=1.0.0",
+    ],
+    entry_points={
+        "console_scripts": [
+            "musicflow=music_player_app:main",
+        ],
+    },
+    include_package_data=True,
+    keywords="music player streaming spotify youtube-music material-design",
+)
