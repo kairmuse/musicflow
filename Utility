@@ -1,0 +1,352 @@
+"""
+Modulo utility per MusicFlow Music Player
+Contiene funzioni helper e gestione della configurazione
+"""
+
+import os
+from pathlib import Path
+from dotenv import load_dotenv
+from typing import Optional, Dict
+import json
+from datetime import datetime
+
+
+class ConfigManager:
+    """Gestione della configurazione dell'app"""
+    
+    def __init__(self, env_file=".env"):
+        """
+        Inizializza il ConfigManager
+        
+        Args:
+            env_file: Percorso al file .env
+        """
+        self.env_file = env_file
+        self.config = {}
+        self.load_config()
+    
+    def load_config(self):
+        """Carica la configurazione dal file .env"""
+        if os.path.exists(self.env_file):
+            load_dotenv(self.env_file)
+        
+        self.config = {
+            'spotify_client_id': os.getenv('SPOTIFY_CLIENT_ID', ''),
+            'spotify_client_secret': os.getenv('SPOTIFY_CLIENT_SECRET', ''),
+            'download_folder': os.getenv('DOWNLOAD_FOLDER', 'downloads'),
+            'audio_format': os.getenv('AUDIO_FORMAT', 'mp3'),
+            'audio_quality': int(os.getenv('AUDIO_QUALITY', '192')),
+            'theme': os.getenv('THEME', 'light'),
+            'debug': os.getenv('DEBUG', 'false').lower() == 'true',
+        }
+        
+        # Crea la cartella di download se non esiste
+        Path(self.config['download_folder']).mkdir(exist_ok=True)
+        
+        return self.config
+    
+    def get(self, key: str, default=None):
+        """
+        Ottiene un valore dalla configurazione
+        
+        Args:
+            key: Chiave della configurazione
+            default: Valore di default
+            
+        Returns:
+            Il valore della configurazione
+        """
+        return self.config.get(key, default)
+    
+    def set(self, key: str, value):
+        """
+        Imposta un valore nella configurazione
+        
+        Args:
+            key: Chiave della configurazione
+            value: Nuovo valore
+        """
+        self.config[key] = value
+    
+    def save_config(self):
+        """Salva la configurazione nel file .env"""
+        with open(self.env_file, 'w') as f:
+            for key, value in self.config.items():
+                f.write(f"{key.upper()}={value}\n")
+
+
+class PlaylistManager:
+    """Gestione avanzata delle playlist"""
+    
+    @staticmethod
+    def export_playlist(songs: list, filename: str, format: str = 'm3u') -> bool:
+        """
+        Esporta una playlist in vari formati
+        
+        Args:
+            songs: Lista di canzoni [{'title', 'artist', 'file_path'}, ...]
+            filename: Nome del file di output
+            format: Formato (m3u, pls, xspf)
+            
+        Returns:
+            True se l'esportazione è riuscita
+        """
+        try:
+            if format == 'm3u':
+                return PlaylistManager._export_m3u(songs, filename)
+            elif format == 'pls':
+                return PlaylistManager._export_pls(songs, filename)
+            elif format == 'xspf':
+                return PlaylistManager._export_xspf(songs, filename)
+            return False
+        except Exception as e:
+            print(f"Errore nell'esportazione: {e}")
+            return False
+    
+    @staticmethod
+    def _export_m3u(songs: list, filename: str) -> bool:
+        """Esporta in formato M3U"""
+        with open(filename, 'w', encoding='utf-8') as f:
+            f.write("#EXTM3U\n")
+            for song in songs:
+                duration = int(song.get('duration', 0))
+                title = song.get('title', 'Unknown')
+                artist = song.get('artist', 'Unknown')
+                path = song.get('file_path', '')
+                
+                f.write(f"#EXTINF:{duration},{artist} - {title}\n")
+                f.write(f"{path}\n")
+        return True
+    
+    @staticmethod
+    def _export_pls(songs: list, filename: str) -> bool:
+        """Esporta in formato PLS"""
+        with open(filename, 'w', encoding='utf-8') as f:
+            f.write("[playlist]\n")
+            for i, song in enumerate(songs, 1):
+                path = song.get('file_path', '')
+                title = song.get('title', 'Unknown')
+                artist = song.get('artist', 'Unknown')
+                duration = int(song.get('duration', 0))
+                
+                f.write(f"File{i}={path}\n")
+                f.write(f"Title{i}={artist} - {title}\n")
+                f.write(f"Length{i}={duration}\n")
+            
+            f.write(f"NumberOfEntries={len(songs)}\n")
+            f.write("Version=2\n")
+        return True
+    
+    @staticmethod
+    def _export_xspf(songs: list, filename: str) -> bool:
+        """Esporta in formato XSPF (Spotify Playlist Format)"""
+        xspf = """<?xml version="1.0" encoding="UTF-8"?>
+<playlist version="1" xmlns="http://xspf.org/ns/0/">
+  <trackList>
+"""
+        for song in songs:
+            title = song.get('title', 'Unknown').replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+            artist = song.get('artist', 'Unknown').replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+            path = song.get('file_path', '').replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+            duration = int(song.get('duration', 0) * 1000)
+            
+            xspf += f"""    <track>
+      <title>{title}</title>
+      <creator>{artist}</creator>
+      <location>file:///{path}</location>
+      <duration>{duration}</duration>
+    </track>
+"""
+        
+        xspf += """  </trackList>
+</playlist>"""
+        
+        with open(filename, 'w', encoding='utf-8') as f:
+            f.write(xspf)
+        return True
+    
+    @staticmethod
+    def import_m3u(filename: str) -> list:
+        """
+        Importa una playlist M3U
+        
+        Args:
+            filename: Percorso del file M3U
+            
+        Returns:
+            Lista di canzoni
+        """
+        songs = []
+        try:
+            with open(filename, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith('#'):
+                        songs.append({
+                            'file_path': line,
+                            'title': Path(line).stem,
+                            'artist': 'Unknown'
+                        })
+        except Exception as e:
+            print(f"Errore nell'importazione M3U: {e}")
+        
+        return songs
+
+
+class TimeFormatter:
+    """Funzioni per formattare i tempi audio"""
+    
+    @staticmethod
+    def seconds_to_hms(seconds: int) -> str:
+        """
+        Converte secondi in formato HH:MM:SS
+        
+        Args:
+            seconds: Numero di secondi
+            
+        Returns:
+            Stringa formattata (MM:SS o HH:MM:SS)
+        """
+        if seconds < 0:
+            return "00:00"
+        
+        hours = seconds // 3600
+        minutes = (seconds % 3600) // 60
+        secs = seconds % 60
+        
+        if hours > 0:
+            return f"{hours}:{minutes:02d}:{secs:02d}"
+        else:
+            return f"{minutes}:{secs:02d}"
+    
+    @staticmethod
+    def hms_to_seconds(time_string: str) -> int:
+        """
+        Converte stringa HH:MM:SS in secondi
+        
+        Args:
+            time_string: Stringa nel formato MM:SS o HH:MM:SS
+            
+        Returns:
+            Numero di secondi
+        """
+        try:
+            parts = time_string.split(':')
+            if len(parts) == 2:
+                minutes, seconds = map(int, parts)
+                return minutes * 60 + seconds
+            elif len(parts) == 3:
+                hours, minutes, seconds = map(int, parts)
+                return hours * 3600 + minutes * 60 + seconds
+        except:
+            pass
+        return 0
+
+
+class FileHelper:
+    """Funzioni helper per la gestione dei file"""
+    
+    AUDIO_EXTENSIONS = {'.mp3', '.wav', '.flac', '.ogg', '.m4a', '.aac', '.opus'}
+    
+    @staticmethod
+    def is_audio_file(file_path: str) -> bool:
+        """
+        Controlla se un file è un file audio
+        
+        Args:
+            file_path: Percorso del file
+            
+        Returns:
+            True se il file è un file audio
+        """
+        return Path(file_path).suffix.lower() in FileHelper.AUDIO_EXTENSIONS
+    
+    @staticmethod
+    def get_audio_files_in_folder(folder_path: str, recursive: bool = True) -> list:
+        """
+        Trova tutti i file audio in una cartella
+        
+        Args:
+            folder_path: Percorso della cartella
+            recursive: Se cercare ricorsivamente nelle sottocartelle
+            
+        Returns:
+            Lista di percorsi dei file audio
+        """
+        audio_files = []
+        folder = Path(folder_path)
+        
+        if recursive:
+            pattern = '**/*'
+        else:
+            pattern = '*'
+        
+        for file_path in folder.glob(pattern):
+            if file_path.is_file() and FileHelper.is_audio_file(str(file_path)):
+                audio_files.append(str(file_path))
+        
+        return sorted(audio_files)
+    
+    @staticmethod
+    def get_file_size_mb(file_path: str) -> float:
+        """
+        Ottiene la dimensione di un file in MB
+        
+        Args:
+            file_path: Percorso del file
+            
+        Returns:
+            Dimensione in MB
+        """
+        try:
+            return os.path.getsize(file_path) / (1024 * 1024)
+        except:
+            return 0
+
+
+class Logger:
+    """Sistema di logging semplice"""
+    
+    def __init__(self, log_file: str = "musicflow.log"):
+        self.log_file = log_file
+    
+    def log(self, level: str, message: str):
+        """
+        Registra un messaggio
+        
+        Args:
+            level: Livello di log (INFO, WARNING, ERROR, DEBUG)
+            message: Messaggio da registrare
+        """
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        log_message = f"[{timestamp}] [{level}] {message}\n"
+        
+        # Stampa su console se in debug mode
+        print(log_message.strip())
+        
+        # Salva nel file di log
+        with open(self.log_file, 'a', encoding='utf-8') as f:
+            f.write(log_message)
+    
+    def info(self, message: str):
+        """Registra un messaggio informativo"""
+        self.log("INFO", message)
+    
+    def warning(self, message: str):
+        """Registra un avvertimento"""
+        self.log("WARNING", message)
+    
+    def error(self, message: str):
+        """Registra un errore"""
+        self.log("ERROR", message)
+    
+    def debug(self, message: str):
+        """Registra un messaggio di debug"""
+        self.log("DEBUG", message)
+
+
+# Istanza globale del logger
+logger = Logger()
+
+# Istanza globale della configurazione
+config = ConfigManager()
